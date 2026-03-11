@@ -1,0 +1,104 @@
+================================================================
+  InfraMap — Light Theme CSS Changes
+  File: static/inframap/css/main.css
+================================================================
+
+STEP 1: Replace the :root block at the top of main.css
+--------------------------------------------------------
+
+:root {
+  --bg:       #f0f2f8;
+  --surface:  #ffffff;
+  --surface2: #f5f7fc;
+  --surface3: #ebeef7;
+  --border:   #dde2f0;
+  --border2:  #c8cfe4;
+  --accent:   #0077ff;
+  --accent2:  #7c3aed;
+  --accent3:  #e53e3e;
+  --accent4:  #0a8a5c;
+  --yellow:   #b45309;
+  --text:     #0f1320;
+  --muted:    #9aa3be;
+  --muted2:   #5a6480;
+}
+
+
+STEP 2: Add these overrides at the bottom of main.css
+--------------------------------------------------------
+
+/* Light theme overrides */
+
+/* Navbar gradient line */
+.navbar::after {
+  opacity: 0.6;
+}
+
+/* Stat cards */
+.stat-card {
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* Brand mark shadow */
+.brand-mark {
+  box-shadow: 0 0 12px rgba(0,119,255,0.2);
+}
+
+/* Profile avatar shadows */
+.profile-avatar-lg {
+  box-shadow: 0 4px 12px rgba(124,58,237,0.2);
+}
+.profile-card-avatar {
+  box-shadow: 0 8px 20px rgba(124,58,237,0.2);
+}
+
+/* Topology borders */
+.topo-server { border-color: rgba(0,119,255,0.25); }
+.topo-vm     { border-color: rgba(124,58,237,0.25); }
+
+/* Table row hover */
+tr:hover td { background: rgba(0,0,0,0.03); }
+
+/* Scrollbar */
+* { scrollbar-color: var(--border2) transparent; }
+
+
+================================================================
+  WHY EACH VARIABLE WAS CHANGED
+================================================================
+
+--bg        #08090f -> #f0f2f8   Light grey page background so it
+                                  doesn't look stark white
+
+--surface   #0f1120 -> #ffffff   Pure white cards lift off the bg
+
+--surface2  #161929 -> #f5f7fc   Very light grey for nested elements
+
+--surface3  #1c2035 -> #ebeef7   Slightly darker light grey for
+                                  hover states and inner sections
+
+--border    #1f2540 -> #dde2f0   Soft blue-grey border
+
+--border2   #2a3050 -> #c8cfe4   Slightly darker border for emphasis
+
+--accent    #00e5ff -> #0077ff   Cyan is invisible on white, switched
+                                  to a proper readable blue
+
+--accent2   #8b5cf6 -> #7c3aed   Purple stays similar, slightly deeper
+
+--accent3   #f87171 -> #e53e3e   Red deepened for contrast on white
+
+--accent4   #34d399 -> #0a8a5c   Light green is unreadable on white,
+                                  darkened to deep green (WCAG pass)
+
+--yellow    #fbbf24 -> #b45309   Bright yellow unreadable on white,
+                                  switched to amber/brown
+
+--text      #e4eaf8 -> #0f1320   Near-black for strong readability
+
+--muted     #4a5580 -> #9aa3be   Was too dark for light bg, lightened
+
+--muted2    #6b7aaa -> #5a6480   Slightly darker mid-grey for
+                                  secondary text readability
+
+================================================================
