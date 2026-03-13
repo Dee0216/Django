@@ -1,0 +1,478 @@
+================================================================================
+        DJANGO LOGIN SYSTEM - COMPLETE STEP-BY-STEP SETUP GUIDE
+        Using existing table: tblempdetails
+================================================================================
+
+This guide walks you through everything from installing Python to running
+your Django login system. Follow each step in order.
+
+________________________________________________________________________________
+
+STEP 1 : CHECK IF PYTHON IS INSTALLED
+________________________________________________________________________________
+
+Open Command Prompt (Windows) or Terminal (Mac/Linux) and type:
+
+    python --version
+
+You should see something like:  Python 3.10.x  or  Python 3.11.x
+
+If Python is NOT installed:
+  - Go to https://www.python.org/downloads/
+  - Download Python 3.10 or above
+  - During installation on Windows, CHECK the box "Add Python to PATH"
+  - After install, close and reopen Command Prompt, then check again.
+
+________________________________________________________________________________
+
+STEP 2 : CHECK IF pip IS AVAILABLE
+________________________________________________________________________________
+
+In Command Prompt / Terminal, type:
+
+    pip --version
+
+You should see something like:  pip 23.x.x
+
+If pip is not found, run:
+
+    python -m ensurepip --upgrade
+
+________________________________________________________________________________
+
+STEP 3 : CREATE A PROJECT FOLDER
+________________________________________________________________________________
+
+Choose a location on your computer where you want to keep this project.
+For example:  C:\Projects\  (Windows)  or  /home/yourname/Projects/  (Linux/Mac)
+
+Create the folder:
+
+  Windows:
+    md C:\Projects\hrproject
+
+  Linux / Mac:
+    mkdir ~/Projects/hrproject
+
+Navigate into the folder:
+
+  Windows:
+    cd C:\Projects\hrproject
+
+  Linux / Mac:
+    cd ~/Projects/hrproject
+
+________________________________________________________________________________
+
+STEP 4 : CREATE A VIRTUAL ENVIRONMENT
+________________________________________________________________________________
+
+A virtual environment keeps your project's packages separate from other projects.
+
+Run this command inside your project folder:
+
+    python -m venv venv
+
+This creates a folder called "venv" inside hrproject.
+
+Now ACTIVATE the virtual environment:
+
+  Windows:
+    venv\Scripts\activate
+
+  Linux / Mac:
+    source venv/bin/activate
+
+You will see "(venv)" appear at the start of your command line.
+This means the virtual environment is active.
+
+  IMPORTANT: Every time you open a new terminal to work on this project,
+             you must activate the virtual environment again.
+
+________________________________________________________________________________
+
+STEP 5 : INSTALL DJANGO AND DATABASE DRIVER
+________________________________________________________________________________
+
+With the virtual environment active, run:
+
+    pip install Django
+
+Then install the driver for your database:
+
+  If you are using PostgreSQL:
+    pip install psycopg2-binary
+
+  If you are using MySQL:
+    pip install mysqlclient
+
+  If you are using Microsoft SQL Server:
+    pip install mssql-django
+
+  If you are using SQLite (for testing only, not recommended for production):
+    No extra install needed. SQLite comes built into Python.
+
+Verify Django was installed:
+
+    python -m django --version
+
+You should see:  4.x.x or 5.x.x
+
+________________________________________________________________________________
+
+STEP 6 : COPY THE PROJECT FILES INTO YOUR FOLDER
+________________________________________________________________________________
+
+Copy the "myproject" folder (which was provided to you) into your hrproject folder.
+
+After copying, your folder structure should look like this:
+
+  hrproject/
+  ├── venv/                        <-- virtual environment (created in Step 4)
+  └── myproject/                   <-- the Django project (copied now)
+      ├── manage.py
+      ├── requirements.txt
+      ├── myproject/
+      │   ├── __init__.py
+      │   ├── settings.py
+      │   ├── urls.py
+      │   └── wsgi.py
+      └── myapp/
+          ├── __init__.py
+          ├── models.py
+          ├── views.py
+          ├── urls.py
+          └── templates/
+              └── myapp/
+                  ├── login.html
+                  └── home.html
+
+________________________________________________________________________________
+
+STEP 7 : CONFIGURE THE DATABASE IN settings.py
+________________________________________________________________________________
+
+Open the file:  myproject/myproject/settings.py
+
+Find the section that says:  # ─── DATABASE CONFIGURATION ───
+
+Edit it to match YOUR database details.
+
+------------------------------------------------------
+EXAMPLE FOR PostgreSQL:
+------------------------------------------------------
+
+  DATABASES = {
+      'default': {
+          'ENGINE': 'django.db.backends.postgresql',
+          'NAME': 'your_actual_database_name',
+          'USER': 'your_db_username',
+          'PASSWORD': 'your_db_password',
+          'HOST': 'localhost',
+          'PORT': '5432',
+      }
+  }
+
+------------------------------------------------------
+EXAMPLE FOR MySQL:
+------------------------------------------------------
+
+  DATABASES = {
+      'default': {
+          'ENGINE': 'django.db.backends.mysql',
+          'NAME': 'your_actual_database_name',
+          'USER': 'your_db_username',
+          'PASSWORD': 'your_db_password',
+          'HOST': 'localhost',
+          'PORT': '3306',
+      }
+  }
+
+------------------------------------------------------
+EXAMPLE FOR SQL Server (using mssql-django):
+------------------------------------------------------
+
+  DATABASES = {
+      'default': {
+          'ENGINE': 'mssql',
+          'NAME': 'your_actual_database_name',
+          'USER': 'your_db_username',
+          'PASSWORD': 'your_db_password',
+          'HOST': 'localhost',
+          'PORT': '1433',
+          'OPTIONS': {
+              'driver': 'ODBC Driver 17 for SQL Server',
+          },
+      }
+  }
+
+  Replace:
+    your_actual_database_name  --> the name of your database
+    your_db_username           --> your database login username
+    your_db_password           --> your database login password
+    localhost                  --> the IP or hostname of your DB server
+                                   (if the DB is on the same machine, keep localhost)
+
+Save the file after editing.
+
+________________________________________________________________________________
+
+STEP 8 : VERIFY YOUR TABLE NAME AND COLUMN NAMES
+________________________________________________________________________________
+
+Open the file:  myproject/myapp/models.py
+
+You will see this section:
+
+  class Tblempdetails(models.Model):
+      employeecode = models.CharField(max_length=50, primary_key=True)
+      employeename = models.CharField(max_length=200, db_column='employee name')
+      designation  = models.CharField(max_length=200)
+      section      = models.CharField(max_length=200)
+      password     = models.CharField(max_length=200)
+
+      class Meta:
+          db_table = 'tblempdetails'
+          managed  = False
+
+CHECK the following:
+
+  1. db_table = 'tblempdetails'
+     Make sure this matches the EXACT table name in your database.
+     (It is case-sensitive on Linux/Mac systems.)
+
+  2. db_column='employee name'
+     The column "employee name" has a space in its name.
+     If your actual column name is different (e.g., "employeename" with no space),
+     remove the db_column part and just write:
+       employeename = models.CharField(max_length=200)
+
+  3. primary_key=True on employeecode
+     This tells Django that employeecode is the unique identifier.
+     If your table has a different primary key column, adjust accordingly.
+
+  4. managed = False
+     This is VERY IMPORTANT. It tells Django NOT to create, alter, or delete
+     your table. Django will only read from and write to it.
+
+Save the file if you made any changes.
+
+________________________________________________________________________________
+
+STEP 9 : NAVIGATE INTO THE DJANGO PROJECT FOLDER
+________________________________________________________________________________
+
+In your terminal (with venv still active), navigate into myproject:
+
+  Windows:
+    cd C:\Projects\hrproject\myproject
+
+  Linux / Mac:
+    cd ~/Projects/hrproject/myproject
+
+You should now be in the folder that contains manage.py.
+Confirm by listing files:
+
+  Windows:   dir
+  Linux/Mac: ls
+
+You should see manage.py in the list.
+
+________________________________________________________________________________
+
+STEP 10 : RUN DATABASE MIGRATIONS
+________________________________________________________________________________
+
+Django needs to create one internal table to manage user sessions (login state).
+Your tblempdetails table will NOT be touched.
+
+Run:
+
+    python manage.py migrate
+
+You will see output like:
+
+  Applying contenttypes.0001_initial... OK
+  Applying sessions.0001_initial... OK
+  ...
+
+If you see an error like "could not connect to server" or "Access denied":
+  --> Go back to Step 7 and double-check your database credentials.
+
+________________________________________________________________________________
+
+STEP 11 : TEST THE DATABASE CONNECTION (OPTIONAL BUT RECOMMENDED)
+________________________________________________________________________________
+
+To confirm Django can see your tblempdetails table, open Django shell:
+
+    python manage.py shell
+
+Then type these commands one by one:
+
+    from myapp.models import Tblempdetails
+    Tblempdetails.objects.all()
+
+If you see a list of employee records (or an empty list with no error), it works.
+If you see an error, your table name or column names in models.py need adjusting.
+
+Type  exit()  to leave the shell.
+
+________________________________________________________________________________
+
+STEP 12 : START THE DJANGO DEVELOPMENT SERVER
+________________________________________________________________________________
+
+Run:
+
+    python manage.py runserver
+
+You should see:
+
+  Django version 4.x.x, using settings 'myproject.settings'
+  Starting development server at http://127.0.0.1:8000/
+  Quit the server with CTRL-BREAK (Windows) or CTRL-C (Mac/Linux).
+
+________________________________________________________________________________
+
+STEP 13 : OPEN THE LOGIN PAGE IN YOUR BROWSER
+________________________________________________________________________________
+
+Open your web browser and go to:
+
+    http://127.0.0.1:8000/
+
+You will see the Employee Login page.
+
+Enter a valid employeecode and password from your tblempdetails table.
+
+If login is successful --> You will be redirected to:
+    http://127.0.0.1:8000/home/
+
+The home page will display:
+  - Employee Code
+  - Employee Name
+  - Designation
+  - Section
+  - A Logout button
+
+If login fails --> An error message appears on the login page:
+  "Invalid Employee Code or Password. Please try again."
+
+________________________________________________________________________________
+
+STEP 14 : TESTING LOGOUT
+________________________________________________________________________________
+
+On the home page, click the "Logout" button (top right corner).
+
+You will be redirected back to the login page.
+
+If you try to go directly to  http://127.0.0.1:8000/home/  without logging in,
+Django will automatically redirect you back to the login page.
+
+________________________________________________________________________________
+
+STEP 15 : STOPPING THE SERVER
+________________________________________________________________________________
+
+To stop the development server, go back to the terminal and press:
+
+    CTRL + C
+
+________________________________________________________________________________
+
+COMMON ERRORS AND FIXES
+________________________________________________________________________________
+
+ERROR: "No module named 'django'"
+  FIX:  Your virtual environment is not active.
+        Run:  venv\Scripts\activate  (Windows)
+              source venv/bin/activate  (Linux/Mac)
+        Then try again.
+
+ERROR: "django.db.utils.OperationalError: could not connect to server"
+  FIX:  Your database is not running or the credentials in settings.py are wrong.
+        - Make sure your PostgreSQL/MySQL server is running.
+        - Double-check HOST, PORT, NAME, USER, PASSWORD in settings.py.
+
+ERROR: "django.db.utils.ProgrammingError: relation 'tblempdetails' does not exist"
+  FIX:  The table name in models.py does not match your actual table name.
+        Open models.py and fix:  db_table = 'exact_table_name_in_your_db'
+
+ERROR: "django.db.utils.OperationalError: no such column: ..."
+  FIX:  A column name in models.py does not match your actual database column.
+        Open models.py and fix the column names to match exactly.
+
+ERROR: "CSRF verification failed"
+  FIX:  Make sure your login form includes  {% csrf_token %}  inside the <form> tag.
+        The provided login.html already includes this. Do not remove it.
+
+ERROR: Port 8000 already in use
+  FIX:  Run the server on a different port:
+        python manage.py runserver 8080
+        Then open:  http://127.0.0.1:8080/
+
+________________________________________________________________________________
+
+FILE SUMMARY - WHAT EACH FILE DOES
+________________________________________________________________________________
+
+manage.py
+  The Django command-line tool. Used to run the server, migrations, etc.
+
+myproject/settings.py
+  Main configuration file. Contains database settings, installed apps,
+  middleware, and template configuration.
+
+myproject/urls.py
+  Project-level URL router. Forwards all URLs to myapp/urls.py.
+
+myapp/models.py
+  Defines the Tblempdetails model that maps to your existing database table.
+  managed=False ensures Django never modifies the table.
+
+myapp/views.py
+  Contains three functions:
+    login_view  --> Validates employee code and password, stores session.
+    home_view   --> Shows the home page (only if logged in).
+    logout_view --> Clears the session and redirects to login.
+
+myapp/urls.py
+  Maps URLs to view functions:
+    /         --> login_view
+    /home/    --> home_view
+    /logout/  --> logout_view
+
+myapp/templates/myapp/login.html
+  The styled login page with Employee Code and Password fields.
+
+myapp/templates/myapp/home.html
+  The employee dashboard shown after successful login. Displays employee
+  details from the session and provides a Logout button.
+
+________________________________________________________________________________
+
+NOTES
+________________________________________________________________________________
+
+1. PLAIN TEXT PASSWORDS
+   This system compares passwords as plain text to match your existing schema.
+   If you want to add password hashing in the future, use Django's built-in:
+     from django.contrib.auth.hashers import make_password, check_password
+
+2. SESSION EXPIRY
+   By default, Django sessions expire when the browser is closed.
+   To set a custom timeout (e.g., 30 minutes), add to settings.py:
+     SESSION_COOKIE_AGE = 1800   # seconds
+
+3. PRODUCTION DEPLOYMENT
+   Before deploying to a live server:
+     - Set DEBUG = False in settings.py
+     - Set ALLOWED_HOSTS = ['yourdomain.com']
+     - Change SECRET_KEY to a long random string
+     - Use a proper web server like Gunicorn + Nginx
+
+================================================================================
+                              END OF GUIDE
+================================================================================
