@@ -1,0 +1,256 @@
+==============================================================
+  SERVER MANAGER — SOFTWARE MODEL REFACTOR: DETAILED STEPS
+==============================================================
+
+OVERVIEW
+--------
+The Software model previously held a direct ForeignKey to VirtualMachine (vm).
+This has been removed. Software now links to VirtualMachine INDIRECTLY through
+ApplicationServer using a double join:
+
+    Software  ──(app_id)──►  ApplicationServer  ──(vm_id)──►  VirtualMachine
+
+The `app` field (FK to ApplicationServer) is the sole foreign key on Software.
+A Python @property `vm` on the Software model resolves the VM transparently so
+all existing template code that uses `software.vm` continues to work in views
+like softwares_by_vm.
+
+
+==============================================================
+FILES CHANGED
+==============================================================
+
+1. Server/models.py
+2. Server/forms.py
+3. Server/views.py
+4. Server/migrations/0012_remove_software_vm.py  ← NEW FILE
+5. Server/templates/list_software_server.html
+6. Server/templates/edit_software.html
+7. Server/templates/add_software_server.html
+8. Server/templates/softwares_by_vm.html
+9. Server/templates/software_def.html
+
+
+==============================================================
+DETAILED CHANGES
+==============================================================
+
+──────────────────────────────────────────────────────────────
+1. Server/models.py
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Removed field: `type = models.CharField(...)` (old string type field)
+  - Removed field: `vm = models.ForeignKey('VirtualMachine', ...)`
+  - Added field:   `app = models.ForeignKey('ApplicationServer', on_delete=models.CASCADE,
+                     db_column='type', blank=True, null=True)`
+    NOTE: db_column='type' maps to the existing DB column that migration 0010
+    already renamed/repurposed — no raw SQL needed.
+  - Added @property `vm` that returns `self.app.vm if self.app else None`
+    This allows all template/view code that accesses `software.vm` to keep
+    working without modification, resolving the VM via the double join.
+
+BEFORE (Software class):
+    type = models.CharField(max_length=50, blank=True, null=True)
+    vm   = models.ForeignKey('VirtualMachine', ..., db_column='vm_id', ...)
+
+AFTER (Software class):
+    app  = models.ForeignKey('ApplicationServer', ..., db_column='type', ...)
+
+    @property
+    def vm(self):
+        if self.app and self.app.vm:
+            return self.app.vm
+        return None
+
+
+──────────────────────────────────────────────────────────────
+2. Server/forms.py  —  SoftwareForm
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Removed 'type' and 'vm' from fields list.
+  - Added 'app' to fields list.
+
+BEFORE:
+    fields = ['software_id','name','type','version','vm',
+              'client','focal_point','programming_language','description']
+
+AFTER:
+    fields = ['software_id','name','version','app',
+              'client','focal_point','programming_language','description']
+
+
+──────────────────────────────────────────────────────────────
+3. Server/views.py
+──────────────────────────────────────────────────────────────
+
+A) list_software_server
+   BEFORE: Software.objects.select_related('vm').all()
+   AFTER:  Software.objects.select_related('app__vm').all()
+   WHY:    Eagerly loads app and its vm in one query (double join).
+
+B) softwares_by_vm
+   BEFORE: Software.objects.filter(vm=vm)
+   AFTER:  Software.objects.select_related('app__vm').filter(app__vm=vm)
+   WHY:    There is no direct vm FK on Software anymore. We filter through
+           the ApplicationServer relationship: app__vm=vm performs
+           Software JOIN ApplicationServer JOIN VirtualMachine.
+
+C) software_preview  (JSON endpoint used by home page peek)
+   BEFORE: Software.objects.filter(vm_id=vm_id)
+   AFTER:  Software.objects.filter(app__vm_id=vm_id)
+   WHY:    Same reason — traverse through app to reach vm.
+
+D) edit_software
+   - Removed 'type' and 'vm_id' from before/after audit dicts.
+   - Added 'app_id' to before/after audit dicts.
+   - Changed POST read: app_id = request.POST.get('app')
+                        software.app_id = app_id
+     (was: vm_id = request.POST.get('vm'); software.vm_id = vm_id)
+   - Context passed to template: only 'apps' (ApplicationServer.objects
+     .select_related('vm').all()) — removed 'vms' queryset since VM is
+     now derived, not directly selected.
+
+
+──────────────────────────────────────────────────────────────
+4. Server/migrations/0012_remove_software_vm.py  (NEW)
+──────────────────────────────────────────────────────────────
+Removes the `vm` ForeignKey field from the Software model at the
+Django ORM layer. The underlying DB column (vm_id) was already
+separated from the `app` column (which reuses 'type' column).
+
+Content:
+    operations = [
+        migrations.RemoveField(model_name='software', name='vm'),
+    ]
+
+Run this with:
+    python manage.py migrate
+
+
+──────────────────────────────────────────────────────────────
+5. templates/list_software_server.html
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Column header "vm" → split into "Application Server" + "VM (via App Server)"
+  - Cell for application server: {{ software.app.name }}
+  - Cell for VM: {{ software.app.vm.hostname }} with link to virtual_machine_def
+    using software.app.vm.pk (was software.vm.pk)
+  - Both cells show "—" gracefully if app or vm is null.
+  - colspan on empty row updated from 5 to 10.
+
+
+──────────────────────────────────────────────────────────────
+6. templates/edit_software.html
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Removed the "Type" field (was a text input).
+  - Removed the "Virtual Machine" <select> dropdown.
+  - Added "Application Server" <select> dropdown (name="app"):
+      Loops over `apps` context variable.
+      Each option shows app.name + "(VM: vm.hostname)" for clarity.
+      Pre-selects current software.app_id.
+  - Added read-only "VM (resolved via App Server)" text input showing
+      software.app.vm.hostname (disabled, purely informational).
+  - View now passes `apps` context (not `vms`) — see views.py change D.
+
+
+──────────────────────────────────────────────────────────────
+7. templates/add_software_server.html
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Added a note below the form explaining that selecting an Application
+    Server automatically determines the VM via the double join.
+  - The Django form (`{{ form.as_p }}`) will now render the `app`
+    dropdown (ApplicationServer) instead of `vm` since SoftwareForm
+    fields were updated.
+
+
+──────────────────────────────────────────────────────────────
+8. templates/softwares_by_vm.html
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Column "Type" renamed to "Application Server".
+  - Shows {{ software.app.name }} for the app column.
+  - VM column now reads {{ software.app.vm.hostname }} and links via
+    software.app.vm.pk (traversing double join in template).
+  - colspan on empty row updated from 8 to 9.
+  - The queryset behind this view (softwares_by_vm in views.py) uses
+    filter(app__vm=vm) so only software linked to this VM via their
+    ApplicationServer is shown — the double join works end-to-end.
+
+
+──────────────────────────────────────────────────────────────
+9. templates/software_def.html
+──────────────────────────────────────────────────────────────
+WHAT CHANGED:
+  - Column "type" renamed to "Application Server".
+  - Shows {{ software.app.name }} for app.
+  - VM column reads {{ software.app.vm.hostname }} with link via
+    software.app.vm.pk.
+  - Null-safe: shows "—" when app or vm is not set.
+
+
+==============================================================
+HOW TO APPLY (Step-by-Step Instructions)
+==============================================================
+
+Step 1 — Replace modified files
+  Copy all files from this zip into your project, overwriting the
+  existing files at the same relative paths under Servermanager/.
+
+Step 2 — Run the new migration
+  cd Servermanager
+  python manage.py migrate
+  (This runs migration 0012 which removes the `vm` field from
+   the Software ORM model. The DB schema was already changed by
+   migration 0010 — this just syncs the ORM state.)
+
+Step 3 — Verify the DB column mapping
+  The Software table in the DB should have:
+    - Column `type`  → mapped to Software.app  (FK to application_server.app_id)
+    - Column `vm_id` → this column is now UNUSED by Software (removed in 0012)
+  If you want to clean up the DB column `vm_id` from the software table,
+  run this SQL manually AFTER verifying everything works:
+    ALTER TABLE software DROP COLUMN vm_id;
+  WARNING: Only do this after confirming no other code references it.
+
+Step 4 — Test these pages/features
+  a) List Software        → /list-software/
+     - Confirm "Application Server" and "VM (via App Server)" columns display.
+  b) Edit Software        → /software/edit/<id>/
+     - Confirm only Application Server dropdown appears (no VM dropdown).
+     - Confirm VM info shows read-only based on selected app server.
+  c) Add Software         → /add-software/
+     - Confirm the form shows ApplicationServer dropdown (no vm field).
+  d) Softwares by VM      → /vm/<vm_id>/softwares/
+     - Confirm softwares are listed using the double join
+       (Software → ApplicationServer → VirtualMachine).
+  e) Software Detail      → /software/<id>/
+     - Confirm Application Server and VM columns display correctly.
+  f) VM software preview  → /vms/<vm_id>/software-preview/  (JSON)
+     - Confirm returns software names filtered via app__vm_id.
+
+
+==============================================================
+DATA RELATIONSHIP SUMMARY
+==============================================================
+
+OLD relationship:
+  Software ──(vm_id)──► VirtualMachine
+
+NEW relationship (double join):
+  Software ──(type/app_id)──► ApplicationServer ──(vm_id)──► VirtualMachine
+
+Django ORM query for "software on a given VM":
+  Software.objects.filter(app__vm=vm)
+  → SQL: SELECT software.* FROM software
+         JOIN application_server ON software.type = application_server.app_id
+         JOIN virtual_machine    ON application_server.vm_id = virtual_machine.vm_id
+         WHERE virtual_machine.vm_id = <vm_id>
+
+The @property `vm` on the Software model provides transparent access:
+  software.vm  →  software.app.vm  →  VirtualMachine instance or None
+
+==============================================================
+END OF DOCUMENT
+==============================================================
