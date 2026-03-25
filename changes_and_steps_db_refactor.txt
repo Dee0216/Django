@@ -1,0 +1,297 @@
+==============================================================
+  SERVER MANAGER — DATABASE SERVER REFACTOR: DETAILED STEPS
+==============================================================
+
+OVERVIEW OF CHANGE
+------------------
+The old "DatabaseServer" model/table has been split into two:
+
+  OLD:
+    database_server  (db_id, db_type, user_id, password, schema,
+                      version, vm_id FK→virtual_machine, port,
+                      description, db_name)
+
+  NEW STRUCTURE:
+
+  1. database_server  (NEW TABLE)
+     Columns: db_id, name, focal_point, location, port, remarks,
+              vm_id FK→virtual_machine
+     Purpose: Represents a logical database server installed on a VM.
+
+  2. schema_info  (RENAMED + ALTERED from old database_server)
+     Columns: db_id, db_type, user_id, password, version, port,
+              description, db_name,
+              database_server_id FK→database_server
+     Removed: schema (column dropped), vm_id (column dropped)
+     Purpose: Holds per-schema connection credentials, linked to a
+              DatabaseServer.
+
+  RELATIONSHIP CHAIN (double join):
+    SchemaInfo ──(database_server_id)──► DatabaseServer ──(vm_id)──► VirtualMachine
+
+  A @property `vm` on SchemaInfo resolves the VM transparently:
+    schema_instance.vm  →  schema_instance.database_server.vm
+
+
+==============================================================
+DATABASE CHANGES (RAW SQL — run manually in order)
+==============================================================
+
+Run these SQL statements against your database BEFORE running
+Django migrations:
+
+-- Step 1: Create the new database_server table
+CREATE TABLE database_server (
+    db_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        VARCHAR(100) NOT NULL,
+    focal_point VARCHAR(100),
+    location    VARCHAR(100),
+    port        INTEGER,
+    remarks     TEXT,
+    vm_id       INTEGER REFERENCES virtual_machine(vm_id) ON DELETE CASCADE
+);
+
+-- Step 2: Rename old database_server to schema_info
+ALTER TABLE database_server RENAME TO schema_info;
+-- NOTE: On MySQL/PostgreSQL, do step 1 first under a different
+-- name, then rename:
+--   CREATE TABLE database_server_new (...); 
+--   ALTER TABLE database_server RENAME TO schema_info;
+--   ALTER TABLE database_server_new RENAME TO database_server;
+
+-- Step 3: Add the new FK column to schema_info
+ALTER TABLE schema_info ADD COLUMN database_server_id INTEGER
+    REFERENCES database_server(db_id) ON DELETE CASCADE;
+
+-- Step 4: Drop removed columns from schema_info
+--   SQLite does not support DROP COLUMN before version 3.35.
+--   For SQLite < 3.35, recreate the table:
+ALTER TABLE schema_info DROP COLUMN schema;
+ALTER TABLE schema_info DROP COLUMN vm_id;
+--   If on older SQLite, recreate schema_info without those columns.
+
+-- Step 5: Update SoftwareDatabaseMap FK
+--   The 'db_id' column in software_database_map already points to
+--   the old database_server(db_id). Since we renamed the table to
+--   schema_info, the FK now points to schema_info(db_id). No column
+--   change needed — just ensure the FK constraint is updated in your
+--   DB if you use enforced FK constraints.
+
+
+==============================================================
+DJANGO MIGRATION (0013)
+==============================================================
+
+After running the raw SQL above, run:
+
+    python manage.py migrate
+
+Migration 0013 syncs the Django ORM state:
+  - Registers new DatabaseServer model (managed=False, db_table='database_server')
+  - Registers new SchemaInfo model (managed=False, db_table='schema_info')
+  - Updates SoftwareDatabaseMap.db FK to point to SchemaInfo
+
+
+==============================================================
+FILES CHANGED
+==============================================================
+
+ 1. Server/models.py
+ 2. Server/forms.py
+ 3. Server/views.py
+ 4. Server/urls.py
+ 5. Server/migrations/0013_schema_info_database_server_refactor.py  ← NEW
+ 6. Server/templates/list_database_server.html          (new DB Server list)
+ 7. Server/templates/list_schema_info.html              ← NEW
+ 8. Server/templates/edit_database_server.html          ← NEW
+ 9. Server/templates/edit_schema_info.html              ← NEW
+10. Server/templates/database_server_def.html           ← NEW
+11. Server/templates/schema_info_def.html               ← NEW
+12. Server/templates/databases_by_vm.html               (now shows DB Servers)
+13. Server/templates/schemas_by_vm.html                 ← NEW (double join)
+14. Server/templates/add_database_server.html           (updated for new model)
+15. Server/templates/add_schema_info.html               ← NEW
+16. Server/templates/virtual_machine_def.html           (added schemas_by_vm link)
+17. Server/templates/home.html                          (db.name instead of db.db_name)
+
+
+==============================================================
+DETAILED CHANGES
+==============================================================
+
+──────────────────────────────────────────────────────────────
+1. Server/models.py
+──────────────────────────────────────────────────────────────
+REMOVED:
+  Old DatabaseServer class (had vm FK, schema field, etc.)
+
+ADDED — DatabaseServer (new):
+  db_id, name, focal_point, location, port, remarks
+  vm = ForeignKey('VirtualMachine', db_column='vm_id')
+  db_table = 'database_server'
+
+ADDED — SchemaInfo (renamed from old DatabaseServer):
+  db_id, db_type, user_id, password, version, port, description, db_name
+  database_server = ForeignKey('DatabaseServer', db_column='database_server_id')
+  @property vm: returns self.database_server.vm (double join)
+  db_table = 'schema_info'
+
+UPDATED — SoftwareDatabaseMap:
+  db = ForeignKey('SchemaInfo', ...)   (was ForeignKey('DatabaseServer'))
+
+──────────────────────────────────────────────────────────────
+2. Server/forms.py
+──────────────────────────────────────────────────────────────
+UPDATED — DatabaseServerForm:
+  Now uses new DatabaseServer model.
+  Fields: db_id, name, focal_point, location, port, remarks, vm
+
+ADDED — SchemaInfoForm:
+  Uses SchemaInfo model.
+  Fields: db_id, db_type, user_id, password, version, port,
+          description, db_name, database_server
+
+──────────────────────────────────────────────────────────────
+3. Server/views.py
+──────────────────────────────────────────────────────────────
+RENAMED/REPLACED:
+  add_database_server  → creates new DatabaseServer
+  list_database_server → lists new DatabaseServer (context: db_servers)
+  edit_database        → split into:
+                          edit_database_server (new DatabaseServer)
+                          edit_schema_info     (SchemaInfo)
+  database_def         → kept as alias → calls schema_info_def
+
+NEW VIEWS:
+  edit_database_server(db_id)  — edit a DatabaseServer record
+  database_server_def(db_id)   — detail view of a DatabaseServer + its schemas
+  add_schema_info()            — add a SchemaInfo record
+  list_schema_info()           — list all SchemaInfo (select_related database_server__vm)
+  edit_schema_info(db_id)      — edit a SchemaInfo record
+  schema_info_def(db_id)       — detail view of a SchemaInfo record
+  schemas_by_vm(vm_id)         — double join: SchemaInfo.filter(database_server__vm=vm)
+
+UPDATED:
+  databases_by_vm(vm_id) — now filters DatabaseServer.filter(vm=vm)
+  dbs_preview(vm_id)     — now reads DatabaseServer.filter(vm_id=vm_id)
+  home()                 — databases context = DatabaseServer.select_related('vm')
+  add_assets()           — adds 'schemas' = SchemaInfo.objects.all() to context
+
+──────────────────────────────────────────────────────────────
+4. Server/urls.py
+──────────────────────────────────────────────────────────────
+NEW URLS:
+  /add-dbservers/           add_database_server
+  /list-dbservers/          list_database_server
+  /dbserver/edit/<id>/      edit_database_server
+  /dbserver/<id>/           database_server_def
+  /add-schema/              add_schema_info
+  /list-schema/             list_schema_info
+  /schema/edit/<id>/        edit_schema_info
+  /schema/<id>/             schema_info_def
+  /vm/<id>/databases/       databases_by_vm  (new DB Servers for a VM)
+  /vm/<id>/schemas/         schemas_by_vm    (schemas via double join)
+
+LEGACY KEPT:
+  /database/<id>/           database_def (alias → schema_info_def)
+  /vm/<id>/vms/             databases_by_vm_legacy
+
+──────────────────────────────────────────────────────────────
+5-17. Templates
+──────────────────────────────────────────────────────────────
+list_database_server.html
+  — Now lists DatabaseServer records (name, focal_point, location,
+    port, remarks, VM with link). Edit button links to edit_database_server.
+
+list_schema_info.html  (NEW)
+  — Lists SchemaInfo records with columns: ID, Name, DB Type, User ID,
+    Password (toggleable), Version, Port, Database Server (linked),
+    VM via DB Server (linked), Description, Edit button.
+
+edit_database_server.html  (NEW)
+  — Form fields: name, focal_point, location, port, VM dropdown, remarks.
+
+edit_schema_info.html  (NEW)
+  — Form fields: db_name, db_type, user_id, password, version, port,
+    database_server dropdown (shows name + VM in label), read-only VM
+    field (resolved via DB Server), description.
+
+database_server_def.html  (NEW)
+  — Detail card for a DatabaseServer + table of all SchemaInfo linked to it.
+
+schema_info_def.html  (NEW)
+  — Detail card for a SchemaInfo with all fields + Database Server link
+    + VM (via double join) with link.
+
+databases_by_vm.html
+  — Now shows DatabaseServer list for a VM (name, focal_point, location,
+    port, remarks). No longer shows old schema/db_type columns.
+
+schemas_by_vm.html  (NEW)
+  — Double join view: shows all SchemaInfo for a VM via
+    SchemaInfo.filter(database_server__vm=vm).
+    Columns: ID, Name, Type, Version, Port, Database Server, VM, Description.
+
+virtual_machine_def.html
+  — Added a third icon link (teal) → schemas_by_vm for the VM,
+    alongside existing software and database links.
+
+home.html
+  — Updated db.db_name → db.name and removed db.db_type reference
+    (new DatabaseServer model uses 'name', not 'db_name'/'db_type').
+
+add_database_server.html
+  — Renders DatabaseServerForm (new fields: name, focal_point, etc.)
+
+add_schema_info.html  (NEW)
+  — Renders SchemaInfoForm with a note about VM resolution via DB Server.
+
+
+==============================================================
+DOUBLE JOIN QUERY SUMMARY
+==============================================================
+
+"Show all schema info for a given VM":
+  SchemaInfo.objects.filter(database_server__vm=vm)
+  → SQL:
+    SELECT schema_info.*
+    FROM schema_info
+    JOIN database_server ON schema_info.database_server_id = database_server.db_id
+    JOIN virtual_machine ON database_server.vm_id = virtual_machine.vm_id
+    WHERE virtual_machine.vm_id = <vm_id>
+
+The @property SchemaInfo.vm provides transparent access:
+  schema.vm  →  schema.database_server.vm  →  VirtualMachine or None
+
+
+==============================================================
+STEP-BY-STEP APPLICATION GUIDE
+==============================================================
+
+Step 1 — Replace all modified files from this zip into your project.
+
+Step 2 — Run the raw SQL statements in the DB CHANGES section above
+         against your database (SQLite, MySQL, or PostgreSQL).
+         Order matters: create database_server first, then rename/alter
+         the old database_server to schema_info.
+
+Step 3 — Run migrations:
+         python manage.py migrate
+
+Step 4 — Update navigation links in base.html (if any) to add links
+         to the new list-schema/ and list-dbservers/ pages.
+
+Step 5 — Test these pages:
+  a) /list-dbservers/         → list of new DatabaseServer records
+  b) /list-schema/            → list of SchemaInfo (with VM via double join)
+  c) /dbserver/edit/<id>/     → edit a DatabaseServer
+  d) /schema/edit/<id>/       → edit a SchemaInfo (DB Server dropdown + read-only VM)
+  e) /dbserver/<id>/          → DatabaseServer detail + its schemas
+  f) /schema/<id>/            → SchemaInfo detail (legacy /database/<id>/ also works)
+  g) /vm/<id>/databases/      → DatabaseServers on a VM (direct FK)
+  h) /vm/<id>/schemas/        → Schemas on a VM (via double join)
+  i) Dashboard (home)         → DB Server count + topology cards use db.name
+
+==============================================================
+END OF DOCUMENT
+==============================================================
