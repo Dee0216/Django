@@ -1,0 +1,55 @@
+WORK REPORT — SERVER INFRASTRUCTURE MANAGEMENT SYSTEM
+======================================================
+
+• Developed a full-stack Server Infrastructure Management System using Django within 1 month,
+  enabling centralized management of IT infrastructure.
+
+• Used Django (Python, MVT architecture), SQLite database, HTML, CSS, and Django templating
+  with a custom session-based authentication system.
+
+• Designed a normalized relational database with 9 tables representing the hierarchy:
+  physical servers → virtual machines → application/database servers → software/schema.
+
+• Implemented efficient data relationships using double-join queries to handle indirect
+  mappings without redundant foreign keys.
+
+• Built complete CRUD functionality for all modules including physical servers, virtual
+  machines, application servers, database servers, software, and schema information.
+
+• Enabled structured drill-down views such as:
+    - VMs under each physical server
+    - Software and databases mapped to each VM
+    - Software–database relationship visualization
+
+• Developed a custom authentication system with role-based access control using an existing
+  employee master table.
+
+• Implemented session management with secure login, logout, and access restriction for
+  administrative actions.
+
+• Created a comprehensive audit logging system capturing all user activities including login
+  attempts, data additions, edits, and views.
+
+• Designed field-level change tracking by storing before-and-after values for every edit
+  operation.
+
+• Built a responsive and user-friendly interface with sidebar navigation and a dashboard
+  displaying key infrastructure metrics.
+
+• Added interactive UI features such as password visibility toggle and AJAX-based hover
+  previews for quick data insights.
+
+• Managed database evolution through 13 structured migrations, including major schema
+  refactoring while maintaining backward compatibility.
+
+• Designed a clean REST-style URL architecture with 38 routes, including nested endpoints
+  and JSON APIs for dynamic frontend behavior.
+
+• Developed 37 view functions, 9 models, and 34 templates, totaling ~3,800 lines of
+  frontend code and 590 lines of backend logic.
+
+• Completed the entire project independently, covering database design, backend logic,
+  frontend development, and system integration.
+
+• Resolved key challenges in complex data relationships, schema updates, audit tracking,
+  and UI interactivity through optimized design and custom implementations.
