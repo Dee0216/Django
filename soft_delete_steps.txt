@@ -1,0 +1,115 @@
+==============================================================
+  SOFT DELETE IMPLEMENTATION — STEPS
+==============================================================
+
+OVERVIEW
+--------
+Instead of permanently deleting records, every table now has an
+is_delete column (INTEGER, default 0). When a record is "deleted":
+  - is_delete is set to 1 on that row
+  - is_delete is cascaded to all dependent rows automatically
+  - All list/query views only show rows where is_delete = 0
+  - Data is never lost — it stays in the DB, just hidden
+
+CASCADE HIERARCHY
+-----------------
+PhysicalServer (is_delete=1)
+  └─ VirtualMachine (is_delete=1)
+       ├─ ApplicationServer (is_delete=1)
+       │    └─ Software (is_delete=1)
+       │         └─ SoftwareDatabaseMap (is_delete=1)
+       └─ DatabaseServer (is_delete=1)
+            └─ SchemaInfo (is_delete=1)
+                 └─ SoftwareDatabaseMap (is_delete=1)
+
+==============================================================
+STEP 1 — RUN RAW SQL ON YOUR DATABASE
+==============================================================
+Run these ALTER TABLE statements in your SQLite database:
+
+  ALTER TABLE physical_server       ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE virtual_machine       ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE application_server    ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE database_server       ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE schema_info           ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE software              ADD COLUMN is_delete INTEGER DEFAULT 0;
+  ALTER TABLE software_database_map ADD COLUMN is_delete INTEGER DEFAULT 0;
+
+This adds is_delete=0 to all existing rows automatically.
+
+==============================================================
+STEP 2 — RUN DJANGO MIGRATION
+==============================================================
+  python manage.py migrate
+
+Migration 0014 syncs the ORM state with the new is_delete field.
+
+==============================================================
+STEP 3 — REPLACE FILES
+==============================================================
+Copy these files from the zip into your project:
+  - Server/models.py
+  - Server/views.py
+  - Server/migrations/0014_add_is_delete_all_tables.py
+
+No template changes are needed — the delete buttons and modal
+from the previous update still work exactly the same.
+
+==============================================================
+WHAT CHANGED IN views.py
+==============================================================
+
+1. ALL list querysets now filter is_delete=0:
+   - list_physical_servers, list_virtual_machine,
+     list_application_server, list_database_server,
+     list_schema_info, list_software_server
+
+2. ALL drill-down views filter is_delete=0:
+   - vms_by_server, softwares_by_vm,
+     databases_by_vm, schemas_by_vm
+
+3. ALL JSON preview endpoints filter is_delete=0:
+   - vms_preview, dbs_preview, software_preview
+
+4. ALL dropdown querysets in edit forms filter is_delete=0
+   (so deleted records don't appear in dropdowns)
+
+5. Home dashboard counts and lists filter is_delete=0
+
+6. check_server_children, check_vm_children, etc. now
+   only count active (is_delete=0) children
+
+7. The delete views now do SOFT DELETE (is_delete=1) with
+   full cascade instead of .delete():
+
+   delete_physical_server  → sets server + all VMs + all their
+                              children to is_delete=1
+   delete_virtual_machine  → sets VM + AppServers + Software +
+                              DBServers + SchemaInfo + Maps to 1
+   delete_application_server → sets AppServer + Software + Maps to 1
+   delete_database_server  → sets DBServer + SchemaInfo + Maps to 1
+   delete_schema_info      → sets SchemaInfo + its Maps to 1
+   delete_software         → sets Software + its Maps to 1
+
+8. A new AuthLog action 'soft_deleted' is recorded for every
+   delete, with details showing what was cascaded.
+
+==============================================================
+RECOVERING DELETED RECORDS (if needed)
+==============================================================
+Since data is never lost, you can recover any record directly
+in the database by setting is_delete back to 0:
+
+  UPDATE physical_server SET is_delete=0 WHERE server_id=<id>;
+  UPDATE virtual_machine SET is_delete=0 WHERE vm_id=<id>;
+  -- etc.
+
+Or recover an entire server and all its children:
+  UPDATE virtual_machine SET is_delete=0
+    WHERE physical_server_id=<id>;
+  UPDATE application_server SET is_delete=0
+    WHERE vm_id IN (SELECT vm_id FROM virtual_machine
+                    WHERE physical_server_id=<id>);
+  -- continue for software, db_server, schema_info, maps
+
+==============================================================
